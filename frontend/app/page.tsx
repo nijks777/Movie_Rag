@@ -61,7 +61,7 @@ export default function Home() {
       await new Promise(resolve => setTimeout(resolve, 300));
 
       setProcessingStep('🤖 Generating answer...');
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const apiUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
       const response = await fetch(`${apiUrl}/search/compare`, {
         method: 'POST',
         headers: {
