@@ -15,8 +15,10 @@ data/
 backend/data/
 *.csv
 *.pdf
-*.txt
 *.docx
+# Allow requirements.txt
+!requirements.txt
+!**/requirements.txt
 
 # IDE
 .vscode/
