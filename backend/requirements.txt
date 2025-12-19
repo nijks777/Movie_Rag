@@ -20,6 +20,10 @@ markdown
 # Web search (for corrective RAG)
 duckduckgo-search
 
+# API Framework
+fastapi
+uvicorn[standard]
+
 # Utilities
 python-dotenv
 tiktoken
