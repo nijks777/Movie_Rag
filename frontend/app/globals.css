@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+:root {
+  --cinema-black: #0a0a0a;
+  --cinema-dark: #1a1a1a;
+  --cinema-gray: #2a2a2a;
+  --cinema-light: #e5e5e5;
+  --cinema-white: #ffffff;
+  --cinema-gold: #d4af37;
+}
+
+@theme inline {
+  --color-cinema-black: var(--cinema-black);
+  --color-cinema-dark: var(--cinema-dark);
+  --color-cinema-gray: var(--cinema-gray);
+  --color-cinema-light: var(--cinema-light);
+  --color-cinema-white: var(--cinema-white);
+  --color-cinema-gold: var(--cinema-gold);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--cinema-black);
+  color: var(--cinema-light);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  position: relative;
+}
+
+/* Glass Morphism Effects */
+.glass-card {
+  background: rgba(26, 26, 26, 0.7);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.glass-card-premium {
+  background: rgba(42, 42, 42, 0.6);
+  backdrop-filter: blur(40px) saturate(200%);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  box-shadow:
+    0 12px 48px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Gradient Utilities */
+.gradient-hero {
+  background: linear-gradient(
+    135deg,
+    rgba(212, 175, 55, 0.1) 0%,
+    rgba(10, 10, 10, 0.95) 50%,
+    rgba(10, 10, 10, 1) 100%
+  );
+}
+
+.gradient-overlay {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(10, 10, 10, 0.8) 70%,
+    rgba(10, 10, 10, 1) 100%
+  );
+}
+
+/* Gold Shine Animation */
+.gold-shine {
+  background: linear-gradient(
+    90deg,
+    #b8931f 0%,
+    #d4af37 50%,
+    #f4d03f 100%
+  );
+  background-size: 200% 100%;
+  animation: shine 3s ease infinite;
+}
+
+@keyframes shine {
+  0%, 100% { background-position: 0% 0%; }
+  50% { background-position: 100% 0%; }
+}
+
+/* Smooth scroll behavior */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Accessibility: Respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+}
