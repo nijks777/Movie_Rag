@@ -95,10 +95,47 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """
+    Health check endpoint for deployment monitoring.
+
+    Returns:
+    - status: Overall service health (healthy/degraded/unhealthy)
+    - service: Service name and version
+    - rag_initialized: Whether RAG system is loaded
+    - environment: Environment information
+    - timestamp: Current server time
+    """
+    import os
+    from datetime import datetime
+
+    # Check RAG system
+    rag_healthy = rag_system is not None
+
+    # Check environment variables
+    has_openai_key = bool(os.getenv("OPENAI_API_KEY"))
+    has_pinecone_key = bool(os.getenv("PINECONE_API_KEY"))
+
+    # Determine overall status
+    if rag_healthy and has_openai_key and has_pinecone_key:
+        overall_status = "healthy"
+    elif has_openai_key and has_pinecone_key:
+        overall_status = "degraded"  # API keys present but RAG not initialized
+    else:
+        overall_status = "unhealthy"  # Missing critical config
+
     return {
-        "status": "healthy",
-        "rag_initialized": rag_system is not None
+        "status": overall_status,
+        "service": {
+            "name": "Movie RAG API",
+            "version": "1.0.0"
+        },
+        "rag_initialized": rag_healthy,
+        "environment": {
+            "openai_configured": has_openai_key,
+            "pinecone_configured": has_pinecone_key,
+            "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        },
+        "timestamp": datetime.utcnow().isoformat() + "Z"
     }
 
 
@@ -271,8 +308,8 @@ Short conversational answer (prefer web recommendation):"""
         else:
             final_answer = rag_result["answer"]
 
-        # STEP 4: Get suggestions - Mix RAG + Web results for diversity
-        rag_suggestions = rag.get_movie_suggestions(request.query, num_suggestions=10)
+        # STEP 4: Get suggestions - Ensure we always return 5 quality suggestions
+        rag_suggestions = rag.get_movie_suggestions(request.query, num_suggestions=15)
 
         # Extract actual movie names from web search content
         web_suggestions = []
@@ -302,32 +339,28 @@ Movie titles (one per line):"""
                         "year": "2024"
                     })
 
-        # Mix RAG (60%) + Web (40%) suggestions for best of both
+        # Mix RAG + Web suggestions for best diversity (ensure 5 total)
         mixed_suggestions = []
         seen_titles_lower = set()
 
         # Add top RAG results first (higher quality from our DB)
-        for sug in rag_suggestions[:3]:
-            title_lower = sug['title'].lower()
-            if title_lower not in seen_titles_lower:
-                mixed_suggestions.append(sug)
-                seen_titles_lower.add(title_lower)
-
-        # Add web movie titles for diversity
-        for sug in web_suggestions[:2]:
-            title_lower = sug['title'].lower()
-            if title_lower not in seen_titles_lower:
-                mixed_suggestions.append(sug)
-                seen_titles_lower.add(title_lower)
-
-        # Fill remaining slots with RAG results
-        for sug in rag_suggestions[3:]:
+        for sug in rag_suggestions:
             if len(mixed_suggestions) >= 5:
                 break
             title_lower = sug['title'].lower()
             if title_lower not in seen_titles_lower:
                 mixed_suggestions.append(sug)
                 seen_titles_lower.add(title_lower)
+
+        # If we still don't have 5, add web suggestions
+        if len(mixed_suggestions) < 5:
+            for sug in web_suggestions:
+                if len(mixed_suggestions) >= 5:
+                    break
+                title_lower = sug['title'].lower()
+                if title_lower not in seen_titles_lower:
+                    mixed_suggestions.append(sug)
+                    seen_titles_lower.add(title_lower)
 
         return CompareResponse(
             query=request.query,

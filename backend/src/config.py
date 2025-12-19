@@ -46,8 +46,8 @@ CHUNK_OVERLAP = 200
 
 # Retrieval Settings
 TOP_K_RESULTS = 5
-RELEVANCE_THRESHOLD = 7.0  # Score must be >= 7/10 to trigger web search (stricter)
-MIN_RATING_THRESHOLD = 5.0  # Minimum rating for suggestions (lowered to show more)
+RELEVANCE_THRESHOLD = 6.0  # Score must be >= 6/10 to skip web search (lower = more web search)
+MIN_RATING_THRESHOLD = 6.5  # Minimum rating for quality suggestions
 
 # Dataset paths
 NETFLIX_CSV = DATA_DIR / "NETFLIX MOVIES AND TV SHOWS CLUSTERING.csv"

@@ -158,6 +158,50 @@ Cast: {row['Actor 1']}, {row['Actor 2']}, {row['Actor 3']}
 
         return documents
 
+    def load_new_imdb_data(self) -> List[Document]:
+        """
+        Load the new IMDB movies dataset (IMBD.csv).
+
+        Returns:
+            List of LangChain Document objects
+        """
+        df = pd.read_csv(self.csv_path)
+
+        # Handle missing values
+        df = df.fillna("")
+
+        documents = []
+
+        for idx, row in df.iterrows():
+            # Combine relevant columns
+            content = f"""
+Title: {row['title']}
+Year: {row['year']}
+Duration: {row['duration']}
+Genre: {row['genre']}
+Rating: {row['rating']}
+Description: {row['description']}
+Stars: {row['stars']}
+Votes: {row['votes']}
+            """.strip()
+
+            # Rich metadata for filtering
+            metadata = {
+                "source": "new_imdb", # Differentiate from existing IMDB
+                "title": row['title'],
+                "year": str(row['year']),
+                "duration": row['duration'],
+                "genre": row['genre'],
+                "rating": str(row['rating']),
+                "votes": row['votes'],
+                "description": row['description'],
+                "stars": row['stars'],
+            }
+
+            documents.append(Document(page_content=content, metadata=metadata))
+
+        return documents
+
     @staticmethod
     def load_all_datasets(netflix_path: Path, tv_shows_path: Path, imdb_path: Path) -> List[Document]:
         """

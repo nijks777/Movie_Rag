@@ -47,3 +47,9 @@ frontend/build/
 # Python cache
 *.py[cod]
 *$py.class
+
+# Guide files - internal documentation
+*_GUIDE.md
+DEPLOYMENT.md
+QUICK_DEPLOYMENT_CHECK.md
+*_SUMMARY.md

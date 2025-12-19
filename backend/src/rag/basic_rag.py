@@ -61,7 +61,7 @@ class BasicRAG:
 
     def retrieve(self, query: str, k: int = TOP_K_RESULTS) -> List[Document]:
         """
-        Retrieve relevant documents for a query.
+        Retrieve relevant documents for a query with actor-aware filtering.
 
         Args:
             query: User question
@@ -70,7 +70,34 @@ class BasicRAG:
         Returns:
             List of relevant Document objects
         """
-        return self.vector_store.similarity_search(query, k=k)
+        # Retrieve more documents initially for better filtering
+        initial_k = k * 3
+
+        docs = self.vector_store.similarity_search(query, k=initial_k)
+
+        # Check if query mentions specific actors
+        query_lower = query.lower()
+        actor_keywords = ['movie', 'film', 'show', 'starring', 'actor', 'with']
+
+        # If query seems actor-specific, try to filter by relevance
+        if any(keyword in query_lower for keyword in actor_keywords):
+            # Extract potential actor names (simple heuristic)
+            # Re-rank based on page_content containing query terms
+            query_terms = query_lower.split()
+
+            # Score documents by term matching in content
+            scored_docs = []
+            for doc in docs:
+                content_lower = doc.page_content.lower()
+                # Count how many query terms appear in content
+                score = sum(1 for term in query_terms if term in content_lower)
+                scored_docs.append((score, doc))
+
+            # Sort by score (descending) and return top k
+            scored_docs.sort(key=lambda x: x[0], reverse=True)
+            return [doc for score, doc in scored_docs[:k]]
+
+        return docs[:k]
 
     def format_docs(self, docs: List[Document]) -> str:
         """

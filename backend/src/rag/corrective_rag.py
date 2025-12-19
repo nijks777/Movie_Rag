@@ -70,23 +70,32 @@ class CorrectiveRAG(EnhancedRAG):
         ])
 
         scoring_prompt = ChatPromptTemplate.from_template(
-            """You are a relevance scorer for a movie/TV recommendation system.
+            """You are an expert relevance scorer for a movie/TV recommendation system with advanced semantic understanding.
 
-Rate how relevant these documents are to answering the user's question.
+Your task: Rate how well these documents can answer the user's question with HIGH PRECISION.
 
-Scoring Guide:
-- 0-3: Completely irrelevant, wrong topic
-- 4-6: Somewhat related but missing key information
-- 7-8: Relevant and can partially answer the question
-- 9-10: Highly relevant, contains all needed information
+CRITICAL SCORING CRITERIA:
+- **Actor/Cast Matching**: If user asks for specific actors, documents MUST contain those exact actors in Cast/Stars fields
+- **Semantic Relevance**: Documents must match the core intent (genre, theme, mood, specific attributes)
+- **Information Completeness**: Documents must have enough detail to answer comprehensively
+- **Quality**: Higher-rated content is more valuable for recommendations
+
+Scoring Guide (BE STRICT):
+- 0-3: Completely irrelevant, wrong topic, or missing critical filter (e.g., wrong actor)
+- 4-6: Somewhat related but missing key information or only partial match
+- 7-8: Relevant and can answer the question adequately
+- 9-10: Highly relevant, perfect match for all criteria, contains complete information
 
 User Question: {query}
 
 Retrieved Documents:
 {documents}
 
-Score (0-10): Give ONLY a number.
-Brief Explanation (one sentence):"""
+Instructions:
+1. First line: Give ONLY a number (0-10)
+2. Second line: One sentence explaining your score
+
+Your Score:"""
         )
 
         chain = scoring_prompt | self.scorer_llm | StrOutputParser()
@@ -201,13 +210,53 @@ Feedback (one sentence):"""
 
         return is_grounded, feedback
 
+    def refine_with_feedback(
+        self,
+        question: str,
+        initial_docs: List[Document],
+        initial_answer: str
+    ) -> Tuple[List[Document], str]:
+        """
+        Feedback loop: Re-retrieve if initial answer quality is poor.
+
+        Args:
+            question: User question
+            initial_docs: First set of retrieved documents
+            initial_answer: Generated answer from initial docs
+
+        Returns:
+            Tuple of (refined_docs, refined_answer)
+        """
+        # Check if answer seems incomplete or low quality
+        answer_lower = initial_answer.lower()
+        quality_issues = [
+            len(initial_answer) < 50,  # Too short
+            "i don't" in answer_lower or "cannot" in answer_lower,  # Uncertain
+            "no information" in answer_lower,  # Missing info
+        ]
+
+        if any(quality_issues):
+            print("🔄 Feedback loop: Refining results due to low initial quality...")
+
+            # Try different retrieval strategy
+            refined_docs = self.retrieve_with_multi_query(question, k=10)
+
+            # Re-generate answer
+            context = self.format_docs(refined_docs)
+            refined_answer = self.generate_answer(question, context)
+
+            return refined_docs, refined_answer
+
+        return initial_docs, initial_answer
+
     def query_corrective(
         self,
         question: str,
         strategy: str = "multi_query",
         k: int = 5,
         enable_web_fallback: bool = True,
-        enable_verification: bool = True
+        enable_verification: bool = True,
+        enable_feedback_loop: bool = True
     ) -> Dict:
         """
         Complete Corrective RAG pipeline.
@@ -256,16 +305,17 @@ Feedback (one sentence):"""
         used_web_search = False
 
         # Step 3: Web search fallback if needed
-        if enable_web_fallback and relevance_score < RELEVANCE_THRESHOLD:
-            print(f"\n⚠️  Relevance score ({relevance_score}) < threshold ({RELEVANCE_THRESHOLD})")
+        if enable_web_fallback and (relevance_score < RELEVANCE_THRESHOLD or len(docs) < 2):
+            print(f"\n⚠️  Relevance score ({relevance_score}) < threshold ({RELEVANCE_THRESHOLD}) or low doc count ({len(docs)})")
             print(f"🌐 Step 3: Triggering web search fallback...")
 
             web_docs = self.web_search_fallback(question)
 
             if web_docs:
-                docs = web_docs  # Use web results
+                # Combine and prioritize web results
+                docs = web_docs + docs
                 used_web_search = True
-                print(f"✅ Using web search results")
+                print(f"✅ Using combined web and vector search results")
             else:
                 print(f"⚠️  Web search failed, using vector DB results anyway")
         else:
@@ -275,6 +325,16 @@ Feedback (one sentence):"""
         print(f"\n🤖 Step 4: Generating answer...")
         context = self.format_docs(docs)
         answer = self.generate_answer(question, context)
+
+        # Step 4.5: Feedback loop refinement (NEW)
+        used_feedback_loop = False
+        if enable_feedback_loop:
+            original_answer = answer
+            docs, answer = self.refine_with_feedback(question, docs, answer)
+            if answer != original_answer:
+                used_feedback_loop = True
+                context = self.format_docs(docs)  # Update context
+                print(f"✅ Feedback loop applied - answer refined")
 
         # Step 5: Verify answer (self-reflection)
         is_grounded = True
@@ -308,6 +368,7 @@ Feedback (one sentence):"""
                 "relevance_score": relevance_score,
                 "score_explanation": score_explanation,
                 "used_web_search": used_web_search,
+                "used_feedback_loop": used_feedback_loop,
                 "is_grounded": is_grounded,
                 "verification_feedback": verification_feedback,
                 "num_sources": len(docs)
@@ -322,13 +383,14 @@ Feedback (one sentence):"""
 
     def get_movie_suggestions(self, query: str, num_suggestions: int = 5) -> List[Dict]:
         """
-        Get HIGH-QUALITY movie/TV suggestions based on the query.
+        Get HIGH-QUALITY movie/TV suggestions based on the query with SMART FILTERING.
 
         INTELLIGENT FILTERING:
-        - Only suggests movies with rating >= 6.5/10 (quality threshold)
+        - Actor-aware: If query mentions actors, verifies cast/stars field
+        - Quality threshold: Only suggests movies with rating >= 6.5/10
+        - Relevance scoring: Matches query terms in content
+        - Diversity: Avoids duplicate titles
         - Prioritizes higher-rated content
-        - Filters out low-quality/bad movies
-        - Returns diverse, relevant, highly-rated recommendations
 
         Args:
             query: User question
@@ -337,8 +399,12 @@ Feedback (one sentence):"""
         Returns:
             List of high-quality movie/TV show suggestions with metadata
         """
-        # Retrieve MORE docs to filter for quality
-        docs = self.retrieve(query, k=num_suggestions * 4)
+        # Retrieve MORE docs to filter for quality and relevance
+        docs = self.retrieve(query, k=num_suggestions * 5)
+
+        # Check if query mentions actors (simple detection)
+        query_lower = query.lower()
+        words = query_lower.split()
 
         # Extract unique HIGH-QUALITY titles only
         suggestions = []
@@ -350,6 +416,7 @@ Feedback (one sentence):"""
 
             title = doc.metadata.get('title', 'Unknown')
             rating_str = doc.metadata.get('rating', '0')
+            content = doc.page_content.lower()
 
             # Parse rating (handle different formats: "7.5", "7.5/10", etc.)
             try:
@@ -358,17 +425,36 @@ Feedback (one sentence):"""
                 rating = 0.0
 
             # QUALITY FILTER: Only recommend highly-rated movies (>= 6.5/10)
-            if title not in seen_titles and rating >= MIN_RATING_THRESHOLD:
+            if rating < MIN_RATING_THRESHOLD:
+                continue
+
+            # ACTOR FILTER: If query seems actor-specific, verify presence in content
+            # Check if critical query terms appear in the document content
+            query_match_score = sum(1 for word in words if len(word) > 3 and word in content)
+
+            # If query has specific terms (like actor names), require minimum match
+            if len(words) > 2:  # Multi-word query likely has specific intent
+                # Require at least 50% of meaningful words to match
+                meaningful_words = [w for w in words if len(w) > 3]
+                if meaningful_words and query_match_score < len(meaningful_words) * 0.4:
+                    continue  # Skip if not enough term matches
+
+            if title not in seen_titles:
                 suggestions.append({
                     "title": title,
                     "genre": doc.metadata.get('genre', 'N/A'),
                     "rating": f"{rating}/10",
                     "source": doc.metadata.get('source', 'Unknown'),
-                    "year": doc.metadata.get('year', doc.metadata.get('release_year', 'N/A'))
+                    "year": doc.metadata.get('year', doc.metadata.get('release_year', 'N/A')),
+                    "relevance_score": query_match_score  # For debugging/ranking
                 })
                 seen_titles.add(title)
 
         # Sort by rating (highest first) for best recommendations
         suggestions.sort(key=lambda x: float(x['rating'].split('/')[0]), reverse=True)
+
+        # Remove relevance_score from final output
+        for suggestion in suggestions:
+            suggestion.pop('relevance_score', None)
 
         return suggestions
